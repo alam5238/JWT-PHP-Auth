@@ -1,0 +1,181 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>JWT CRUD Demo</title>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    body { font-family: system-ui, Arial; max-width: 720px; margin: 20px auto; }
+    input, button { padding: 8px; margin: 4px 0; }
+    .row { border: 1px solid #ddd; padding: 8px; margin: 6px 0; display: flex; gap: 8px; align-items: center; }
+    .row input { width: 140px; }
+  </style>
+</head>
+<body>
+  <h2>JWT Auth + Animals CRUD</h2>
+
+  <section id="auth">
+    <h3>Signup</h3>
+    <input id="su_user" placeholder="username">
+    <input id="su_pass" type="password" placeholder="password">
+    <button id="btnSignup">Signup</button>
+
+    <h3>Signin</h3>
+    <input id="li_user" placeholder="username">
+    <input id="li_pass" type="password" placeholder="password">
+    <button id="btnSignin">Signin</button>
+  </section>
+
+  <section id="dash" style="display:none;">
+    <h3>Welcome, <span id="me"></span></h3>
+    <button id="btnLogout">Logout</button>
+
+    <h4>Add Animal</h4>
+    <input id="an_name" placeholder="name">
+    <input id="an_type" placeholder="type">
+    <button id="btnAdd">Add</button>
+
+    <h4>Your Animals</h4>
+    <div id="list"></div>
+  </section>
+
+<script>
+const API = './'; // same folder; change to 'http://localhost/jwt-project/' if served elsewhere
+let token = localStorage.getItem('token') || '';
+
+function authHeaders() {
+  return token ? { 'Authorization': 'Bearer ' + token } : {};
+}
+
+function refreshMe() {
+  if (!token) return;
+  $.ajax({
+    url: API + 'user.php',
+    method: 'GET',
+    headers: authHeaders(),
+    success: res => {
+      if (res && res.success) {
+        $('#me').text(res.username);
+        $('#auth').hide();
+        $('#dash').show();
+        loadAnimals();
+      } else {
+        doLogout();
+      }
+    },
+    error: () => doLogout()
+  });
+}
+
+function doLogout() {
+  // optional call to server; JWT is stateless
+  $.ajax({ url: API + 'logout.php', method: 'POST' });
+  token = '';
+  localStorage.removeItem('token');
+  $('#auth').show();
+  $('#dash').hide();
+  $('#list').empty();
+}
+
+function loadAnimals() {
+  $.ajax({
+    url: API + 'animals.php',
+    method: 'GET',
+    headers: authHeaders(),
+    success: rows => {
+      $('#list').empty();
+      rows.forEach(r => {
+        // inline edit controls per row
+        const row = $(`
+          <div class="row" data-id="${r.id}">
+            <input class="name" value="${r.name}">
+            <input class="type" value="${r.type}">
+            <button class="save">Update</button>
+            <button class="del">Delete</button>
+          </div>
+        `);
+        row.find('.save').on('click', () => {
+          const newName = row.find('.name').val().trim();
+          const newType = row.find('.type').val().trim();
+          $.ajax({
+            url: API + 'animals.php',
+            method: 'PUT',
+            headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+            data: JSON.stringify({ id: r.id, name: newName, type: newType }),
+            success: res => {
+              alert(res.message || 'Updated');
+              loadAnimals();
+            },
+            error: xhr => alert(xhr.responseText || 'Update failed')
+          });
+        });
+        row.find('.del').on('click', () => {
+          if (!confirm('Delete this animal?')) return;
+          // Pass id in query string to keep it simple across browsers
+          $.ajax({
+            url: API + 'animals.php?id=' + encodeURIComponent(r.id),
+            method: 'DELETE',
+            headers: authHeaders(),
+            success: res => {
+              alert(res.message || 'Deleted');
+              loadAnimals();
+            },
+            error: xhr => alert(xhr.responseText || 'Delete failed')
+          });
+        });
+        $('#list').append(row);
+      });
+    }
+  });
+}
+
+$('#btnSignup').on('click', () => {
+  $.ajax({
+    url: API + 'signup.php',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({ username: $('#su_user').val(), password: $('#su_pass').val() }),
+    success: res => alert(res.message || 'Signed up'),
+    error: xhr => alert(xhr.responseText || 'Signup failed')
+  });
+});
+
+$('#btnSignin').on('click', () => {
+  $.ajax({
+    url: API + 'login.php',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({ username: $('#li_user').val(), password: $('#li_pass').val() }),
+    success: res => {
+      if (res.success && res.token) {
+        token = res.token;
+        localStorage.setItem('token', token);
+        refreshMe();
+      } else {
+        alert(res.message || 'Signin failed');
+      }
+    },
+    error: xhr => alert(xhr.responseText || 'Signin failed')
+  });
+});
+
+$('#btnLogout').on('click', doLogout);
+$('#btnAdd').on('click', () => {
+  const name = $('#an_name').val().trim();
+  const type = $('#an_type').val().trim();
+  if (!name || !type) { alert('Provide name and type'); return; }
+  $.ajax({
+    url: API + 'animals.php',
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    data: JSON.stringify({ name, type }),
+    success: res => { $('#an_name').val(''); $('#an_type').val(''); loadAnimals(); },
+    error: xhr => alert(xhr.responseText || 'Add failed')
+  });
+});
+
+// Auto resume if a token exists
+if (token) refreshMe();
+</script>
+</body>
+</html>
